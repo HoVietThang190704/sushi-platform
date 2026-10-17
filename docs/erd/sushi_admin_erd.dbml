@@ -1,0 +1,461 @@
+Project sushi_admin {
+  database_type: 'PostgreSQL'
+  Note: 'Sushi take-away MVP. Inventory is deducted once when preparation starts; subsequent adjustments track deltas. Multi-branch and multi-warehouse ready.'
+}
+
+Enum user_status {
+  ACTIVE
+  INACTIVE
+}
+Enum product_type {
+  SINGLE
+  COMBO
+}
+Enum recipe_status {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+Enum document_status {
+  DRAFT
+  POSTED
+  VOIDED
+}
+Enum stock_document_type {
+  PURCHASE_RECEIPT
+  MANUAL_OUT
+  PRODUCTION_OUT
+  USAGE_EXTRA
+  USAGE_RETURN
+  WASTE
+  STOCK_COUNT_GAIN
+  STOCK_COUNT_LOSS
+  REVERSAL
+  TRANSFER_OUT
+  TRANSFER_IN
+}
+Enum movement_type {
+  IN
+  OUT
+  REVERSAL
+}
+Enum count_status {
+  DRAFT
+  COUNTING
+  POSTED
+  CANCELLED
+}
+Enum order_status {
+  NEW
+  CONFIRMED
+  PREPARING
+  READY
+  COMPLETED
+  CANCELLED
+}
+Enum payment_status {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  REFUNDED
+}
+Enum payment_method {
+  CASH
+  BANK_TRANSFER
+  COD
+  OTHER
+}
+Enum order_channel {
+  STORE
+  PHONE
+  MARKETPLACE
+  OTHER
+}
+Enum usage_adjustment_type {
+  EXTRA_CONSUMPTION
+  RETURN_UNUSED
+  WASTE_CLASSIFICATION
+  WASTE_RECLASSIFICATION
+}
+Enum adjustment_status {
+  PENDING
+  APPROVED
+  REJECTED
+}
+Enum cash_transaction_type {
+  INCOME
+  EXPENSE
+}
+Enum supplier_payment_status {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+}
+
+Table branches {
+  id uuid [pk]
+  code varchar(30) [not null, unique]
+  name varchar(150) [not null]
+  address text
+  phone varchar(30)
+  is_active boolean [not null, default: true]
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+}
+
+Table warehouses {
+  id uuid [pk]
+  branch_id uuid [not null, ref: > branches.id]
+  code varchar(30) [not null, unique]
+  name varchar(150) [not null]
+  is_default boolean [not null, default: false]
+  is_active boolean [not null, default: true]
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+  Note: 'For MVP initialize one default warehouse. A branch can later have several warehouses.'
+}
+
+Table users {
+  id uuid [pk]
+  full_name varchar(150) [not null]
+  email varchar(255) [not null, unique]
+  password_hash varchar(255) [not null]
+  status user_status [not null, default: 'ACTIVE']
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+}
+Table roles {
+  id uuid [pk]
+  code varchar(60) [not null, unique]
+  name varchar(120) [not null]
+}
+Table permissions {
+  id uuid [pk]
+  code varchar(100) [not null, unique]
+  description varchar(255)
+}
+Table role_permissions {
+  role_id uuid [not null, ref: > roles.id]
+  permission_id uuid [not null, ref: > permissions.id]
+  indexes { (role_id, permission_id) [pk] }
+}
+Table user_roles {
+  id uuid [pk]
+  user_id uuid [not null, ref: > users.id]
+  role_id uuid [not null, ref: > roles.id]
+  branch_id uuid [ref: > branches.id, note: 'NULL = system-wide role; enforce scope in backend']
+  indexes { (user_id, role_id, branch_id) [unique] }
+}
+Table audit_logs {
+  id uuid [pk]
+  actor_id uuid [ref: > users.id]
+  action varchar(100) [not null]
+  entity_type varchar(70) [not null]
+  entity_id uuid
+  payload jsonb
+  created_at timestamptz [not null]
+}
+
+Table units {
+  id uuid [pk]
+  code varchar(20) [not null, unique]
+  name varchar(80) [not null]
+  dimension varchar(30) [not null, note: 'MASS, VOLUME, COUNT; conversions must match dimensions']
+}
+Table ingredient_categories {
+  id uuid [pk]
+  name varchar(100) [not null]
+}
+Table ingredients {
+  id uuid [pk]
+  code varchar(50) [not null, unique]
+  barcode varchar(100) [note: 'Reserved for future scanning; nullable in MVP']
+  name varchar(160) [not null]
+  category_id uuid [ref: > ingredient_categories.id]
+  base_unit_id uuid [not null, ref: > units.id]
+  is_active boolean [not null, default: true]
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+}
+Table unit_conversions {
+  id uuid [pk]
+  ingredient_id uuid [ref: > ingredients.id, note: 'NULL for universal conversion such as kg to g']
+  from_unit_id uuid [not null, ref: > units.id]
+  to_unit_id uuid [not null, ref: > units.id]
+  factor decimal(18,6) [not null, note: 'quantity_to = quantity_from * factor']
+}
+Table warehouse_ingredient_settings {
+  warehouse_id uuid [not null, ref: > warehouses.id]
+  ingredient_id uuid [not null, ref: > ingredients.id]
+  minimum_stock decimal(18,3) [not null, default: 0]
+  indexes { (warehouse_id, ingredient_id) [pk] }
+}
+Table product_categories {
+  id uuid [pk]
+  name varchar(100) [not null]
+  parent_id uuid [ref: > product_categories.id]
+}
+Table products {
+  id uuid [pk]
+  sku varchar(60) [not null, unique]
+  barcode varchar(100) [note: 'Reserved for future POS/barcode']
+  name varchar(160) [not null]
+  type product_type [not null, default: 'SINGLE']
+  category_id uuid [ref: > product_categories.id]
+  selling_price decimal(18,2) [not null]
+  image_url text
+  is_active boolean [not null, default: true]
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+}
+Table combo_items {
+  combo_id uuid [not null, ref: > products.id]
+  child_product_id uuid [not null, ref: > products.id]
+  quantity decimal(12,3) [not null]
+  indexes { (combo_id, child_product_id) [pk] }
+  Note: 'Combo expands into constituent products; do not deduct combo and child recipes twice.'
+}
+Table recipes {
+  id uuid [pk]
+  product_id uuid [not null, ref: > products.id]
+  version int [not null]
+  status recipe_status [not null, default: 'DRAFT']
+  effective_from timestamptz
+  created_at timestamptz [not null]
+  indexes { (product_id, version) [unique] }
+}
+Table recipe_items {
+  id uuid [pk]
+  recipe_id uuid [not null, ref: > recipes.id]
+  ingredient_id uuid [not null, ref: > ingredients.id]
+  quantity decimal(18,3) [not null, note: 'In ingredient base unit, per product portion']
+  indexes { (recipe_id, ingredient_id) [unique] }
+}
+
+Table suppliers {
+  id uuid [pk]
+  code varchar(40) [not null, unique]
+  name varchar(160) [not null]
+  phone varchar(30)
+  address text
+  is_active boolean [not null, default: true]
+  created_at timestamptz [not null]
+}
+Table purchase_receipts {
+  id uuid [pk]
+  code varchar(50) [not null, unique]
+  supplier_id uuid [not null, ref: > suppliers.id]
+  warehouse_id uuid [not null, ref: > warehouses.id]
+  status document_status [not null, default: 'DRAFT']
+  total_amount decimal(18,2) [not null, default: 0]
+  payment_status supplier_payment_status [not null, default: 'UNPAID']
+  due_date date
+  note text
+  created_by uuid [not null, ref: > users.id]
+  posted_at timestamptz
+  created_at timestamptz [not null]
+  Note: 'Receipt posts stock independently of supplier payment.'
+}
+Table purchase_receipt_items {
+  id uuid [pk]
+  receipt_id uuid [not null, ref: > purchase_receipts.id]
+  ingredient_id uuid [not null, ref: > ingredients.id]
+  input_unit_id uuid [not null, ref: > units.id]
+  input_quantity decimal(18,3) [not null]
+  base_quantity decimal(18,3) [not null]
+  unit_price decimal(18,2) [not null, note: 'Per input unit']
+  line_total decimal(18,2) [not null]
+}
+Table supplier_payments {
+  id uuid [pk]
+  purchase_receipt_id uuid [not null, ref: > purchase_receipts.id]
+  method payment_method [not null]
+  amount decimal(18,2) [not null]
+  paid_at timestamptz [not null]
+  created_by uuid [not null, ref: > users.id]
+  note text
+}
+
+Table customers {
+  id uuid [pk]
+  full_name varchar(160) [not null]
+  phone varchar(30)
+  address text
+  created_at timestamptz [not null]
+  Note: 'customer_id on orders is nullable for walk-ins.'
+}
+Table orders {
+  id uuid [pk]
+  code varchar(50) [not null, unique]
+  branch_id uuid [not null, ref: > branches.id]
+  warehouse_id uuid [not null, ref: > warehouses.id]
+  customer_id uuid [ref: > customers.id]
+  channel order_channel [not null, default: 'STORE']
+  external_order_code varchar(100)
+  status order_status [not null, default: 'NEW']
+  payment_status payment_status [not null, default: 'UNPAID']
+  sub_total decimal(18,2) [not null, default: 0]
+  discount_amount decimal(18,2) [not null, default: 0]
+  shipping_fee decimal(18,2) [not null, default: 0]
+  total_amount decimal(18,2) [not null, default: 0]
+  note text
+  created_by uuid [not null, ref: > users.id]
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+}
+Table order_items {
+  id uuid [pk]
+  order_id uuid [not null, ref: > orders.id]
+  product_id uuid [not null, ref: > products.id]
+  product_name_snapshot varchar(160) [not null]
+  quantity decimal(12,3) [not null]
+  unit_price decimal(18,2) [not null]
+  discount_amount decimal(18,2) [not null, default: 0]
+  line_total decimal(18,2) [not null]
+}
+Table order_status_histories {
+  id uuid [pk]
+  order_id uuid [not null, ref: > orders.id]
+  from_status order_status
+  to_status order_status [not null]
+  changed_by uuid [not null, ref: > users.id]
+  note text
+  created_at timestamptz [not null]
+}
+Table order_payments {
+  id uuid [pk]
+  order_id uuid [not null, ref: > orders.id]
+  method payment_method [not null]
+  amount decimal(18,2) [not null]
+  paid_at timestamptz [not null]
+  reference_code varchar(100)
+  created_by uuid [not null, ref: > users.id]
+}
+
+Table preparation_runs {
+  id uuid [pk]
+  order_id uuid [not null, ref: > orders.id]
+  run_number int [not null, default: 1]
+  warehouse_id uuid [not null, ref: > warehouses.id]
+  status varchar(30) [not null, note: 'STARTED, FINISHED, CANCELLED']
+  started_by uuid [not null, ref: > users.id]
+  started_at timestamptz [not null]
+  finished_at timestamptz
+  indexes { (order_id, run_number) [unique] }
+  Note: 'First preparation run performs planned deduction exactly once. A genuine remake gets its own run.'
+}
+Table order_ingredient_usages {
+  id uuid [pk]
+  preparation_run_id uuid [not null, ref: > preparation_runs.id]
+  order_item_id uuid [not null, ref: > order_items.id]
+  recipe_id uuid [not null, ref: > recipes.id]
+  ingredient_id uuid [not null, ref: > ingredients.id]
+  planned_quantity decimal(18,3) [not null]
+  actual_quantity decimal(18,3) [not null]
+  waste_quantity decimal(18,3) [not null, default: 0]
+  indexes { (preparation_run_id, order_item_id, recipe_id, ingredient_id) [unique] }
+  Note: 'For combos, this row can reference the child recipe while order_item remains the sold combo line.'
+}
+Table ingredient_usage_adjustments {
+  id uuid [pk]
+  usage_id uuid [not null, ref: > order_ingredient_usages.id]
+  adjustment_type usage_adjustment_type [not null]
+  status adjustment_status [not null, default: 'PENDING']
+  quantity decimal(18,3) [not null]
+  reason text [not null]
+  created_by uuid [not null, ref: > users.id]
+  approved_by uuid [ref: > users.id]
+  stock_document_id uuid [ref: > stock_documents.id]
+  created_at timestamptz [not null]
+  approved_at timestamptz
+  Note: 'WASTE_CLASSIFICATION is informational when already included in consumed quantity; do not post a second stock movement.'
+}
+
+Table stock_balances {
+  warehouse_id uuid [not null, ref: > warehouses.id]
+  ingredient_id uuid [not null, ref: > ingredients.id]
+  quantity decimal(18,3) [not null, default: 0]
+  average_unit_cost decimal(18,6) [not null, default: 0]
+  version int [not null, default: 0]
+  updated_at timestamptz [not null]
+  indexes { (warehouse_id, ingredient_id) [pk] }
+}
+Table stock_documents {
+  id uuid [pk]
+  code varchar(50) [not null, unique]
+  warehouse_id uuid [not null, ref: > warehouses.id]
+  type stock_document_type [not null]
+  status document_status [not null, default: 'DRAFT']
+  purchase_receipt_id uuid [ref: > purchase_receipts.id]
+  preparation_run_id uuid [ref: > preparation_runs.id]
+  reversal_of_id uuid [ref: > stock_documents.id]
+  note text
+  created_by uuid [not null, ref: > users.id]
+  posted_by uuid [ref: > users.id]
+  created_at timestamptz [not null]
+  posted_at timestamptz
+  Note: 'Posting generates stock_movements atomically with balance updates. External operation idempotency enforced by backend.'
+}
+Table stock_document_items {
+  id uuid [pk]
+  stock_document_id uuid [not null, ref: > stock_documents.id]
+  ingredient_id uuid [not null, ref: > ingredients.id]
+  quantity decimal(18,3) [not null, note: 'Always positive; movement direction comes from document type']
+  unit_cost decimal(18,6)
+  related_usage_id uuid [ref: > order_ingredient_usages.id]
+}
+Table stock_movements {
+  id uuid [pk]
+  warehouse_id uuid [not null, ref: > warehouses.id]
+  ingredient_id uuid [not null, ref: > ingredients.id]
+  stock_document_item_id uuid [not null, ref: > stock_document_items.id]
+  movement_type movement_type [not null]
+  quantity_delta decimal(18,3) [not null, note: 'Signed quantity: positive in, negative out']
+  unit_cost decimal(18,6) [not null]
+  original_movement_id uuid [ref: > stock_movements.id]
+  created_at timestamptz [not null]
+  indexes { (warehouse_id, ingredient_id, created_at) }
+  Note: 'Immutable movement ledger; corrections use reversal movements.'
+}
+Table stock_counts {
+  id uuid [pk]
+  code varchar(50) [not null, unique]
+  warehouse_id uuid [not null, ref: > warehouses.id]
+  status count_status [not null, default: 'DRAFT']
+  created_by uuid [not null, ref: > users.id]
+  approved_by uuid [ref: > users.id]
+  snapshot_at timestamptz
+  created_at timestamptz [not null]
+  posted_at timestamptz
+}
+Table stock_count_items {
+  id uuid [pk]
+  stock_count_id uuid [not null, ref: > stock_counts.id]
+  ingredient_id uuid [not null, ref: > ingredients.id]
+  expected_quantity decimal(18,3) [not null]
+  counted_quantity decimal(18,3) [not null]
+  variance_quantity decimal(18,3) [not null]
+  indexes { (stock_count_id, ingredient_id) [unique] }
+}
+
+Table cash_accounts {
+  id uuid [pk]
+  branch_id uuid [not null, ref: > branches.id]
+  name varchar(120) [not null]
+  type payment_method [not null]
+  opening_balance decimal(18,2) [not null, default: 0]
+  is_active boolean [not null, default: true]
+}
+Table cash_transactions {
+  id uuid [pk]
+  cash_account_id uuid [not null, ref: > cash_accounts.id]
+  type cash_transaction_type [not null]
+  category varchar(100) [not null]
+  amount decimal(18,2) [not null]
+  order_payment_id uuid [ref: > order_payments.id]
+  supplier_payment_id uuid [ref: > supplier_payments.id]
+  description text
+  occurred_at timestamptz [not null]
+  created_by uuid [not null, ref: > users.id]
+  Note: 'One cash posting per confirmed payment; do not duplicate revenue/expenses.'
+}
