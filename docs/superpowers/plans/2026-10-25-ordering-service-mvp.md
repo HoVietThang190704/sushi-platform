@@ -96,7 +96,7 @@ git commit -m "feat(ordering): add order realtime event contracts"
 - Modify: `apps/api/package.json`
 
 **Interfaces:**
-- Produces: `start:ordering:dev` script, `build:ordering` script, port `3005`.
+- Produces: `start:ordering:dev` script, `build:ordering` script, port `3004`.
 
 - [ ] **Step 1: Đăng ký app `ordering-service` trong `nest-cli.json`**
 Thêm cấu hình compiler và root dir cho `ordering-service`.
@@ -228,7 +228,7 @@ git commit -m "feat(ordering): implement status transitions, customer cancel rul
 - Test: `apps/api/apps/ordering-service/src/ordering.controller.spec.ts`
 
 **Interfaces:**
-- Produces: REST endpoints `/orders`, `/orders/track`, `/orders/:id/status`, `/orders/:id/payment`, `/orders/:code/cancel`. Gateway chuyển tiếp request `/orders` sang port `3005`.
+- Produces: REST endpoints `/orders`, `/orders/track`, `/orders/:id/status`, `/orders/:id/payment`, `/orders/:code/cancel`. Gateway chuyển tiếp request `/orders` sang port `3004`.
 
 - [ ] **Step 1: Viết unit test cho `OrderingController`**
 Kiểm tra ủy quyền gọi service từ controller.
