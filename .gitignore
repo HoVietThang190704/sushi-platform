@@ -32,3 +32,7 @@ build/
 .turbo/
 .next/
 out/
+
+# Playwright & test artifacts
+.playwright-mcp/
+
