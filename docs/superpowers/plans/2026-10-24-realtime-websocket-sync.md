@@ -174,16 +174,16 @@ git commit -m "feat(realtime): integrate RealtimeProvider and query invalidation
 **Files:**
 - Verify: Luồng 2 cửa sổ/tab trình duyệt mở cùng lúc trên trang Quản lý kho (`/dashboard/inventory`) và Danh mục món (`/dashboard/catalog`).
 
-- [x] **Step 1: Khởi động hệ thống (PostgreSQL, RabbitMQ, Gateway, Inventory, Admin Web)**
+- [ ] **Step 1: Khởi động hệ thống (PostgreSQL, RabbitMQ, Gateway, Inventory, Admin Web)**
 Run: `docker compose -f infrastructure/docker/docker-compose.yml up -d`
 
-- [x] **Step 2: Thực hiện tạo giao dịch kho trên Tab 1**
+- [ ] **Step 2: Thực hiện tạo giao dịch kho trên Tab 1**
 Quan sát Tab 2 tự động cập nhật số tồn và danh sách phiếu nhập/xuất mà không cần F5/Reload.
 
-- [x] **Step 3: Kiểm tra hành vi rớt mạng và phục hồi**
+- [ ] **Step 3: Kiểm tra hành vi rớt mạng và phục hồi**
 Thử ngắt mạng hoặc restart Gateway, xác nhận client tự động reconnect và làm mới dữ liệu.
 
-- [x] **Step 4: Commit tài liệu hướng dẫn & hoàn tất**
+- [ ] **Step 4: Commit tài liệu hướng dẫn & hoàn tất**
 ```bash
 git add docs/superpowers/plans/2026-10-24-realtime-websocket-sync.md
 git commit -m "docs: finalize realtime websocket implementation plan"
